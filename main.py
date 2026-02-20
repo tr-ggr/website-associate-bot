@@ -330,6 +330,63 @@ async def claim_ticket(interaction: discord.Interaction):
 
 
 @bot.tree.command(
+    name="unclaim",
+    description="Unclaim a ticket (use inside a thread) - Developer only"
+)
+async def unclaim_ticket(interaction: discord.Interaction):
+    """Unclaim a ticket and reset its status back to OPEN. Only Developers can unclaim. Must be used inside a ticket thread."""
+    await interaction.response.defer()
+    
+    try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
+        # Check if user is a Developer or PM
+        user_roles = get_user_roles(interaction.user.id)
+        if not (user_roles['is_developer'] or user_roles['is_pm']):
+            await interaction.followup.send("❌ Only Developers can unclaim tickets. Use `/set-role` to get the Developer role.")
+            return
+        
+        thread = interaction.channel
+        
+        # Get thread info from database
+        thread_info = get_thread(thread.id)
+        
+        if not thread_info:
+            await interaction.followup.send("❌ This thread is not tracked in the database")
+            return
+        
+        if thread_info['status'] != 'CLAIMED':
+            await interaction.followup.send("⚠️ This ticket is not claimed. You can only unclaim CLAIMED tickets.")
+            return
+        
+        # Update thread name - remove claim prefix
+        ticket_name = thread_info['ticket_name']
+        new_name = f"[OPEN] {ticket_name}"
+        
+        await thread.edit(name=new_name)
+        update_thread_status(thread.id, "OPEN")
+        
+        # Send notification
+        embed = discord.Embed(
+            title="Ticket Unclaimed",
+            description=f"Unclaimed by: {interaction.user.mention}",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Old Status", value="[CLAIMED]", inline=True)
+        embed.add_field(name="New Status", value="[OPEN]", inline=True)
+        
+        await interaction.followup.send(embed=embed)
+        logger.info(f"Ticket unclaimed: {thread.id} by {interaction.user}")
+        
+    except Exception as e:
+        logger.error(f"Error unclaiming ticket: {e}")
+        await interaction.followup.send(f"❌ Error unclaiming ticket: {e}")
+
+
+@bot.tree.command(
     name="resolved",
     description="Mark a ticket as PENDING-REVIEW with PR link (use inside a thread) - Developer only"
 )
@@ -664,6 +721,7 @@ async def show_help(interaction: discord.Interaction):
         embed.add_field(
             name="👨‍💻 Developer Commands",
             value="**`/claim`** (in thread) - Claim a ticket to work on it\n" +
+                  "**`/unclaim`** (in thread) - Unclaim a ticket and reset to OPEN\n" +
                   "**`/resolved <pr_url>`** (in thread) - Submit ticket for QA review with PR link (adds to dev leaderboard)\n" +
                   "*Only available to users with Developer role*",
             inline=False
