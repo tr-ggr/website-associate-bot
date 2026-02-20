@@ -31,6 +31,7 @@ def init_db():
             claimed_by_username TEXT,
             resolved_by_id INTEGER,
             resolved_by_username TEXT,
+            pr_url TEXT,
             reviewed_by_id INTEGER,
             reviewed_by_username TEXT
         )
@@ -107,7 +108,7 @@ def get_thread(thread_id: int):
 
 def update_thread_status(thread_id: int, status: str, claimed_by_id: int = None, claimed_by_username: str = None,
                         resolved_by_id: int = None, resolved_by_username: str = None,
-                        reviewed_by_id: int = None, reviewed_by_username: str = None):
+                        reviewed_by_id: int = None, reviewed_by_username: str = None, pr_url: str = None):
     """Update the status of a thread and optionally track who made the change."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -124,6 +125,10 @@ def update_thread_status(thread_id: int, status: str, claimed_by_id: int = None,
         updates.append("resolved_by_id = ?, resolved_by_username = ?")
         params.insert(1, resolved_by_id)
         params.insert(2, resolved_by_username)
+
+    if pr_url is not None:
+        updates.append("pr_url = ?")
+        params.insert(1, pr_url)
 
     if reviewed_by_id is not None:
         updates.append("reviewed_by_id = ?, reviewed_by_username = ?")

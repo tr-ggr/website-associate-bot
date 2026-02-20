@@ -207,23 +207,17 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
                 
                 # Add what to fix
                 if ticket.get('what_to_fix'):
-                    fix_text = "\n".join([f"{i+1}. {item}" for i, item in enumerate(ticket['what_to_fix'][:5])])
-                    if len(ticket['what_to_fix']) > 5:
-                        fix_text += f"\n... and {len(ticket['what_to_fix']) - 5} more"
+                    fix_text = "\n".join([f"{i+1}. {item}" for i, item in enumerate(ticket['what_to_fix'])])
                     embed.add_field(name="What to Fix", value=fix_text, inline=False)
                 
                 # Add acceptance criteria
                 if ticket.get('acceptance_criteria'):
-                    criteria_text = "\n".join([f"✓ {item}" for item in ticket['acceptance_criteria'][:5]])
-                    if len(ticket['acceptance_criteria']) > 5:
-                        criteria_text += f"\n... and {len(ticket['acceptance_criteria']) - 5} more"
+                    criteria_text = "\n".join([f"✓ {item}" for item in ticket['acceptance_criteria']])
                     embed.add_field(name="Acceptance Criteria", value=criteria_text, inline=False)
                 
                 # Add related files if present
                 if ticket.get('related_files'):
-                    files_text = "\n".join([f"• {file[:100]}" for file in ticket['related_files'][:3]])
-                    if len(ticket['related_files']) > 3:
-                        files_text += f"\n• ... and {len(ticket['related_files']) - 3} more"
+                    files_text = "\n".join([f"• {file}" for file in ticket['related_files']])
                     embed.add_field(name="Related Files", value=files_text, inline=False)
                 
                 embed.add_field(name="Status", value="🔵 OPEN", inline=True)
@@ -327,10 +321,13 @@ async def claim_ticket(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="resolved",
-    description="Mark a ticket as PENDING-REVIEW (use inside a thread) - Developer only"
+    description="Mark a ticket as PENDING-REVIEW with PR link (use inside a thread) - Developer only"
 )
-async def resolve_ticket(interaction: discord.Interaction):
-    """Mark a ticket as pending review. Only Developers can mark as resolved. Must be used inside a ticket thread."""
+@app_commands.describe(
+    pr_url="Link to your PR/pull request (required)"
+)
+async def resolve_ticket(interaction: discord.Interaction, pr_url: str):
+    """Mark a ticket as pending review with PR URL. Only Developers can mark as resolved. Must be used inside a ticket thread."""
     await interaction.response.defer()
     
     try:
@@ -366,7 +363,7 @@ async def resolve_ticket(interaction: discord.Interaction):
         new_name = f"[Pending-Review][{username}]{ticket_name}"
         
         await thread.edit(name=new_name)
-        update_thread_status(thread.id, "PENDING-REVIEW", resolved_by_id=interaction.user.id, resolved_by_username=username)
+        update_thread_status(thread.id, "PENDING-REVIEW", resolved_by_id=interaction.user.id, resolved_by_username=username, pr_url=pr_url)
         
         # Update developer leaderboard
         increment_developer_resolved(interaction.user.id, str(interaction.user))
@@ -379,6 +376,7 @@ async def resolve_ticket(interaction: discord.Interaction):
         )
         embed.add_field(name="Old Status", value=thread_info['status'], inline=True)
         embed.add_field(name="New Status", value=f"[Pending-Review][{username}]", inline=True)
+        embed.add_field(name="PR Link", value=pr_url, inline=False)
         embed.add_field(name="Next Step", value="Waiting for QA review. Use `/reviewed` to approve.", inline=False)
         
         await interaction.followup.send(embed=embed)
@@ -654,7 +652,7 @@ async def show_help(interaction: discord.Interaction):
         embed.add_field(
             name="👨‍💻 Developer Commands",
             value="**`/claim`** (in thread) - Claim a ticket to work on it\n" +
-                  "**`/resolved`** (in thread) - Submit ticket for QA review (adds to dev leaderboard)\n" +
+                  "**`/resolved <pr_url>`** (in thread) - Submit ticket for QA review with PR link (adds to dev leaderboard)\n" +
                   "*Only available to users with Developer role*",
             inline=False
         )
@@ -703,7 +701,7 @@ async def show_help(interaction: discord.Interaction):
         
         workflow_embed.add_field(
             name="3️⃣ Dev Submits",
-            value="`/resolved` (in thread)\nStatus: `[Pending-Review][dev]`",
+            value="`/resolved <pr_url>` (in thread)\nStatus: `[Pending-Review][dev]`",
             inline=True
         )
         
