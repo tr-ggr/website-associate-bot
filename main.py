@@ -43,17 +43,18 @@ async def on_ready():
 
 @bot.tree.command(
     name="set-role",
-    description="Assign yourself a role (Developer or QA)"
+    description="Assign yourself a role (Developer, QA, or PM)"
 )
 @app_commands.describe(
-    role="The role to assign: 'developer' or 'qa'"
+    role="The role to assign: 'developer', 'qa', or 'pm'"
 )
 @app_commands.choices(role=[
     app_commands.Choice(name="Developer", value="developer"),
-    app_commands.Choice(name="QA", value="qa")
+    app_commands.Choice(name="QA", value="qa"),
+    app_commands.Choice(name="Project Manager", value="pm")
 ])
 async def set_role(interaction: discord.Interaction, role: str):
-    """Assign yourself a Developer or QA role."""
+    """Assign yourself a Developer, QA, or PM role."""
     await interaction.response.defer()
     
     try:
@@ -63,15 +64,23 @@ async def set_role(interaction: discord.Interaction, role: str):
         if role_lower == "developer":
             is_developer = True
             is_qa = False
+            is_pm = False
             discord_role_name = "Developer"
             emoji = "👨‍💻"
         elif role_lower == "qa":
             is_developer = False
             is_qa = True
+            is_pm = False
             discord_role_name = "QA"
             emoji = "🔍"
+        elif role_lower == "pm":
+            is_developer = False
+            is_qa = False
+            is_pm = True
+            discord_role_name = "Project Manager"
+            emoji = "📋"
         else:
-            await interaction.followup.send("❌ Invalid role. Choose 'developer' or 'qa'.")
+            await interaction.followup.send("❌ Invalid role. Choose 'developer', 'qa', or 'pm'.")
             return
         
         # Get or create Discord role
@@ -80,9 +89,10 @@ async def set_role(interaction: discord.Interaction, role: str):
         
         if not discord_role:
             # Create the role if it doesn't exist
+            color = discord.Color.blurple() if role_lower == "developer" else (discord.Color.gold() if role_lower == "qa" else discord.Color.purple())
             discord_role = await guild.create_role(
                 name=discord_role_name,
-                color=discord.Color.blurple() if role_lower == "developer" else discord.Color.gold(),
+                color=color,
                 reason="Ticket bot role assignment"
             )
             logger.info(f"Created Discord role: {discord_role_name}")
@@ -91,7 +101,7 @@ async def set_role(interaction: discord.Interaction, role: str):
         await interaction.user.add_roles(discord_role)
         
         # Set user role in database
-        set_user_role(interaction.user.id, str(interaction.user), is_developer=is_developer, is_qa=is_qa)
+        set_user_role(interaction.user.id, str(interaction.user), is_developer=is_developer, is_qa=is_qa, is_pm=is_pm)
         
         embed = discord.Embed(
             title="Role Assigned",
@@ -111,17 +121,22 @@ async def set_role(interaction: discord.Interaction, role: str):
 
 @bot.tree.command(
     name="load-tickets",
-    description="Load tickets from a folder into a Discord channel"
+    description="Load tickets from a folder into a Discord channel (PM only)"
 )
 @app_commands.describe(
     folder="The folder name within tickets/ directory (e.g., support, bugs, features)",
     channel="The Discord channel where threads should be created"
 )
 async def load_tickets(interaction: discord.Interaction, folder: str, channel: discord.TextChannel):
-    """Load tickets from a folder and create threads in the specified channel."""
+    """Load tickets from a folder and create threads in the specified channel. Only PMs can use this."""
     await interaction.response.defer()
     
     try:
+        # Check if user is a PM
+        if not has_role(interaction.user.id, "pm"):
+            await interaction.followup.send("❌ Only Project Managers can load tickets. Use `/set-role` to get the PM role.")
+            return
+        
         # Load tickets from folder with parsing
         tickets = load_tickets_from_folder(folder)
         
@@ -596,19 +611,20 @@ async def show_help(interaction: discord.Interaction):
         # Role Management
         embed.add_field(
             name="👥 Role Management",
-            value="**`/set-role <developer|qa>`**\n" +
-                  "Assign yourself a role (Developer or QA).\n" +
+            value="**`/set-role <developer|qa|pm>`**\n" +
+                  "Assign yourself a role (Developer, QA, or PM).\n" +
                   "Also assigns the corresponding Discord role.\n" +
-                  "`/set-role developer` or `/set-role qa`",
+                  "`/set-role developer` or `/set-role qa` or `/set-role pm`",
             inline=False
         )
         
         # Ticket Loading
         embed.add_field(
-            name="📂 Loading Tickets",
+            name="📂 Loading Tickets (PM only)",
             value="**`/load-tickets <folder> <channel>`**\n" +
                   "Load tickets from a folder into a Discord channel.\n" +
                   "Creates threads for each markdown file.\n" +
+                  "*Only Project Managers can use this*\n" +
                   "`/load-tickets support #support-channel`",
             inline=False
         )

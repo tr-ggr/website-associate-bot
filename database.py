@@ -43,6 +43,7 @@ def init_db():
             username TEXT NOT NULL UNIQUE,
             is_developer INTEGER DEFAULT 0,
             is_qa INTEGER DEFAULT 0,
+            is_pm INTEGER DEFAULT 0,
             assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -130,15 +131,15 @@ def update_thread_status(thread_id: int, status: str, claimed_by_id: int = None,
 
 # ===== User Role Management =====
 
-def set_user_role(user_id: int, username: str, is_developer: bool = False, is_qa: bool = False):
-    """Set or update a user's roles (can have both)."""
+def set_user_role(user_id: int, username: str, is_developer: bool = False, is_qa: bool = False, is_pm: bool = False):
+    """Set or update a user's roles (can have multiple)."""
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT OR REPLACE INTO user_roles (user_id, username, is_developer, is_qa)
-        VALUES (?, ?, ?, ?)
-    """, (user_id, username, int(is_developer), int(is_qa)))
+        INSERT OR REPLACE INTO user_roles (user_id, username, is_developer, is_qa, is_pm)
+        VALUES (?, ?, ?, ?, ?)
+    """, (user_id, username, int(is_developer), int(is_qa), int(is_pm)))
 
     # Also ensure user exists in leaderboard
     cursor.execute("""
@@ -155,16 +156,17 @@ def get_user_roles(user_id: int) -> dict:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT is_developer, is_qa FROM user_roles WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT is_developer, is_qa, is_pm FROM user_roles WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     conn.close()
 
     if row:
         return {
             "is_developer": bool(row[0]),
-            "is_qa": bool(row[1])
+            "is_qa": bool(row[1]),
+            "is_pm": bool(row[2])
         }
-    return {"is_developer": False, "is_qa": False}
+    return {"is_developer": False, "is_qa": False, "is_pm": False}
 
 
 def has_role(user_id: int, role: str) -> bool:
