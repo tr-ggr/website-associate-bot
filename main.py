@@ -24,6 +24,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.guild_messages = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="/", intents=intents)
 
@@ -360,11 +361,31 @@ async def rebuild_db(interaction: discord.Interaction, folder: str, channel: dis
 
             rebuilt_count += 1
 
+        role_synced_count = 0
+        missing_member_intent = False
+        try:
+            async for member in interaction.guild.fetch_members(limit=None):
+                role_names = {role.name for role in member.roles}
+                is_dev = "Developer" in role_names
+                is_qa = "QA" in role_names
+                is_pm = "Project Manager" in role_names
+
+                if is_dev or is_qa or is_pm:
+                    set_user_role(member.id, str(member), is_developer=is_dev, is_qa=is_qa, is_pm=is_pm)
+                    role_synced_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to sync member roles: {e}")
+            missing_member_intent = True
+
         summary = (
             f"✅ Rebuilt **{rebuilt_count}** thread(s)\n"
             f"⏭️ Skipped **{skipped_count}** thread(s) without a known status prefix\n"
-            f"⚠️ Unmatched **{unmatched_count}** thread(s) to ticket filenames"
+            f"⚠️ Unmatched **{unmatched_count}** thread(s) to ticket filenames\n"
+            f"👥 Synced **{role_synced_count}** user role(s) from Discord"
         )
+
+        if missing_member_intent:
+            summary += "\n⚠️ Member role sync failed (check Members intent and bot permissions)"
 
         embed = discord.Embed(
             title="Database Rebuild Complete",
