@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import logging
+import re
 from config import DISCORD_TOKEN, TICKETS_DIR
 from database import (
     init_db, add_thread, get_thread, update_thread_status,
@@ -25,6 +26,30 @@ intents.guilds = True
 intents.guild_messages = True
 
 bot = commands.Bot(command_prefix="/", intents=intents)
+
+
+def normalize_ticket_name(name: str) -> str:
+    """Normalize a ticket name for matching to filenames."""
+    cleaned = re.sub(r"[^\w\s-]", "", name.lower())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def parse_thread_name(thread_name: str) -> tuple[str | None, str | None]:
+    """Parse a thread name into status and ticket display name."""
+    patterns = [
+        ("OPEN", r"^\[OPEN\]\s*(.+)$"),
+        ("CLAIMED", r"^\[CLAIMED\]\[.+?\](.+)$"),
+        ("PENDING-REVIEW", r"^\[Pending-Review\]\[.+?\](.+)$"),
+        ("REVIEWED", r"^\[Reviewed\]\[.+?\](.+)$"),
+        ("CLOSED", r"^\[CLOSED\]\[.+?\](.+)$"),
+    ]
+
+    for status, pattern in patterns:
+        match = re.match(pattern, thread_name)
+        if match:
+            return status, match.group(1).strip()
+
+    return None, None
 
 
 @bot.event
@@ -266,6 +291,94 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
     except Exception as e:
         logger.error(f"Error loading tickets: {e}")
         await interaction.followup.send(f"❌ Error loading tickets: {e}")
+
+
+@bot.tree.command(
+    name="rebuild-db",
+    description="Rebuild database entries from existing threads in a channel (PM only)"
+)
+@app_commands.describe(
+    folder="The folder name within tickets/ directory",
+    channel="The Discord channel where threads already exist"
+)
+async def rebuild_db(interaction: discord.Interaction, folder: str, channel: discord.TextChannel):
+    """Rebuild database from existing threads in a channel."""
+    await interaction.response.defer()
+
+    try:
+        if not has_role(interaction.user.id, "pm"):
+            await interaction.followup.send("❌ Only Project Managers can rebuild the database.")
+            return
+
+        folder_path = Path(TICKETS_DIR) / folder
+        if not folder_path.exists() or not folder_path.is_dir():
+            await interaction.followup.send(f"❌ Folder `{folder}` not found in `{TICKETS_DIR}/` directory")
+            return
+
+        init_db()
+
+        tickets = load_tickets_from_folder(folder)
+        name_to_filename = {}
+        for ticket in tickets:
+            display_name = ticket.get("title") or ticket["name"]
+            name_to_filename[normalize_ticket_name(display_name)] = ticket["name"]
+
+        active_threads = list(channel.threads)
+        archived_threads = []
+        try:
+            async for thread in channel.archived_threads(limit=None):
+                archived_threads.append(thread)
+        except Exception as e:
+            logger.warning(f"Failed to read archived threads for {channel.id}: {e}")
+
+        threads_by_id = {t.id: t for t in (active_threads + archived_threads)}
+
+        rebuilt_count = 0
+        skipped_count = 0
+        unmatched_count = 0
+
+        for thread in threads_by_id.values():
+            status, ticket_name = parse_thread_name(thread.name)
+            if not status or not ticket_name:
+                skipped_count += 1
+                continue
+
+            add_thread(
+                thread_id=thread.id,
+                ticket_name=ticket_name,
+                folder=folder,
+                channel_id=channel.id,
+                created_by=str(interaction.user)
+            )
+            update_thread_status(thread.id, status)
+
+            filename = name_to_filename.get(normalize_ticket_name(ticket_name))
+            if filename:
+                mark_ticket_loaded(filename, folder, thread.id, channel.id)
+            else:
+                unmatched_count += 1
+
+            rebuilt_count += 1
+
+        summary = (
+            f"✅ Rebuilt **{rebuilt_count}** thread(s)\n"
+            f"⏭️ Skipped **{skipped_count}** thread(s) without a known status prefix\n"
+            f"⚠️ Unmatched **{unmatched_count}** thread(s) to ticket filenames"
+        )
+
+        embed = discord.Embed(
+            title="Database Rebuild Complete",
+            description=summary,
+            color=discord.Color.green() if rebuilt_count > 0 else discord.Color.orange()
+        )
+        embed.add_field(name="Folder", value=f"`{folder}`", inline=False)
+        embed.add_field(name="Channel", value=channel.mention, inline=False)
+
+        await interaction.followup.send(embed=embed)
+
+    except Exception as e:
+        logger.error(f"Error rebuilding database: {e}")
+        await interaction.followup.send(f"❌ Error rebuilding database: {e}")
 
 
 @bot.tree.command(
@@ -712,6 +825,8 @@ async def show_help(interaction: discord.Interaction):
             value="**`/load-tickets <folder> <channel>`**\n" +
                   "Load tickets from a folder into a Discord channel.\n" +
                   "Creates threads for each markdown file.\n" +
+                  "**`/rebuild-db <folder> <channel>`**\n" +
+                  "Rebuild database entries from existing threads in a channel.\n" +
                   "*Only Project Managers can use this*\n" +
                   "`/load-tickets support #support-channel`",
             inline=False
@@ -805,6 +920,7 @@ async def show_help(interaction: discord.Interaction):
         roles_embed.add_field(
             name="🔧 Project Manager (Admin)",
             value="✓ `/load-tickets` - Load tickets into channels\n" +
+                  "✓ `/rebuild-db` - Rebuild database from existing threads\n" +
                   "✓ `/claim` - Claim tickets (like Dev)\n" +
                   "✓ `/resolved` - Submit for review (like Dev)\n" +
                   "✓ `/reviewed` - Approve tickets (like QA)\n" +

@@ -122,6 +122,18 @@ Load all markdown files from a specified folder into a Discord channel.
 /load-tickets bugs #bug-reports
 ```
 
+### `/rebuild-db <folder> <channel>`
+Rebuild database entries from existing threads in a Discord channel (PM only).
+
+**Parameters:**
+- `folder` - Folder name within `tickets/` directory
+- `channel` - Discord channel where threads already exist
+
+**Example:**
+```
+/rebuild-db intramurals2026 #support-squad
+```
+
 ### `/claim`
 Mark a ticket as claimed. Must be used **inside a ticket thread**. Only Developers can use this.
 
