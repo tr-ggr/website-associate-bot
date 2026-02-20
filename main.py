@@ -8,7 +8,8 @@ from database import (
     init_db, add_thread, get_thread, update_thread_status,
     increment_developer_resolved, increment_qa_reviewed, 
     get_leaderboard_dev, get_leaderboard_qa,
-    set_user_role, get_user_roles, has_role
+    set_user_role, get_user_roles, has_role,
+    is_ticket_loaded, mark_ticket_loaded
 )
 from ticket_loader import load_tickets_from_folder, get_available_folders
 from pathlib import Path
@@ -154,9 +155,17 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
         # Create threads for each ticket
         created_count = 0
         failed_count = 0
+        skipped_count = 0
         
         for ticket in tickets:
             try:
+                # Check if this ticket has already been loaded
+                ticket_filename = ticket.get('name', '')
+                if is_ticket_loaded(ticket_filename, folder):
+                    logger.info(f"Ticket already loaded: {ticket_filename} (skipping)")
+                    skipped_count += 1
+                    continue
+                
                 # Use parsed title if available, otherwise use name
                 display_name = ticket.get('title') or ticket['name']
                 thread_name = f"[OPEN] {display_name}"
@@ -175,6 +184,9 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
                     channel_id=channel.id,
                     created_by=str(interaction.user)
                 )
+                
+                # Mark ticket as loaded
+                mark_ticket_loaded(ticket_filename, folder, thread.id, channel.id)
                 
                 # Build detailed embed with parsed information
                 embed = discord.Embed(
@@ -229,6 +241,8 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
         
         # Send summary
         summary = f"✅ Successfully created **{created_count}** thread(s)"
+        if skipped_count > 0:
+            summary += f"\n⏭️ **{skipped_count}** ticket(s) already loaded (skipped)"
         if failed_count > 0:
             summary += f"\n⚠️ Failed to create **{failed_count}** thread(s)"
         

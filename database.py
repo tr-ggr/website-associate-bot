@@ -60,6 +60,19 @@ def init_db():
         )
     """)
 
+    # Create loaded_tickets table to track which tickets have been loaded
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS loaded_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_filename TEXT NOT NULL,
+            folder TEXT NOT NULL,
+            thread_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(ticket_filename, folder)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -269,3 +282,49 @@ def get_user_resolved_count(user_id: int) -> int:
     conn.close()
 
     return row[0] if row else 0
+
+
+# ===== Loaded Tickets Management =====
+
+def is_ticket_loaded(ticket_filename: str, folder: str) -> bool:
+    """Check if a ticket has already been loaded."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT 1 FROM loaded_tickets WHERE ticket_filename = ? AND folder = ?",
+        (ticket_filename, folder)
+    )
+    result = cursor.fetchone()
+    conn.close()
+
+    return result is not None
+
+
+def mark_ticket_loaded(ticket_filename: str, folder: str, thread_id: int, channel_id: int):
+    """Mark a ticket as loaded in the database."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR IGNORE INTO loaded_tickets (ticket_filename, folder, thread_id, channel_id)
+        VALUES (?, ?, ?, ?)
+    """, (ticket_filename, folder, thread_id, channel_id))
+
+    conn.commit()
+    conn.close()
+
+
+def get_loaded_tickets(folder: str) -> list:
+    """Get all loaded tickets for a specific folder."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT ticket_filename, thread_id, channel_id, loaded_at FROM loaded_tickets WHERE folder = ?",
+        (folder,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]
