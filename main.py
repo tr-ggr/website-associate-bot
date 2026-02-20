@@ -596,10 +596,10 @@ async def show_help(interaction: discord.Interaction):
         # Role Management
         embed.add_field(
             name="👥 Role Management",
-            value="**`/set-role <user> <developer> <qa>`**\n" +
-                  "Assign Developer and/or QA roles to users.\n" +
-                  "Users can have both roles simultaneously.\n" +
-                  "`/set-role @john developer: true qa: false`",
+            value="**`/set-role <developer|qa>`**\n" +
+                  "Assign yourself a role (Developer or QA).\n" +
+                  "Also assigns the corresponding Discord role.\n" +
+                  "`/set-role developer` or `/set-role qa`",
             inline=False
         )
         
@@ -616,8 +616,8 @@ async def show_help(interaction: discord.Interaction):
         # Developer Commands
         embed.add_field(
             name="👨‍💻 Developer Commands",
-            value="**`/claim <thread>`** - Claim a ticket to work on it\n" +
-                  "**`/resolved <thread>`** - Submit ticket for QA review (adds to dev leaderboard)\n" +
+            value="**`/claim`** (in thread) - Claim a ticket to work on it\n" +
+                  "**`/resolved`** (in thread) - Submit ticket for QA review (adds to dev leaderboard)\n" +
                   "*Only available to users with Developer role*",
             inline=False
         )
@@ -625,7 +625,7 @@ async def show_help(interaction: discord.Interaction):
         # QA Commands
         embed.add_field(
             name="🔍 QA Commands",
-            value="**`/reviewed <thread>`** - Approve reviewed ticket (adds to QA leaderboard)\n" +
+            value="**`/reviewed`** (in thread) - Approve reviewed ticket (adds to QA leaderboard)\n" +
                   "Must be used on tickets in Pending-Review status\n" +
                   "*Only available to users with QA role*",
             inline=False
@@ -634,8 +634,8 @@ async def show_help(interaction: discord.Interaction):
         # General Commands
         embed.add_field(
             name="⚙️ General Commands",
-            value="**`/closed <thread>`** - Close a ticket\n" +
-                  "**`/leaderboard <role> [limit]`** - View leaderboard\n" +
+            value="**`/closed`** (in thread) - Close a ticket\n" +
+                  "**`/leaderboard <dev|qa> [limit]`** - View leaderboard\n" +
                   "  • `role`: `dev` (default) or `qa`\n" +
                   "  • `limit`: 1-50 (default: 10)\n" +
                   "**`/ticket-folders`** - List all available ticket folders\n" +
@@ -660,25 +660,25 @@ async def show_help(interaction: discord.Interaction):
         
         workflow_embed.add_field(
             name="2️⃣ Developer Claims",
-            value="`/claim <thread>`\nStatus: `[CLAIMED][developer]`",
+            value="`/claim` (in thread)\nStatus: `[CLAIMED][dev]`",
             inline=True
         )
         
         workflow_embed.add_field(
             name="3️⃣ Dev Submits",
-            value="`/resolved <thread>`\nStatus: `[Pending-Review][dev]`",
+            value="`/resolved` (in thread)\nStatus: `[Pending-Review][dev]`",
             inline=True
         )
         
         workflow_embed.add_field(
             name="4️⃣ QA Reviews",
-            value="`/reviewed <thread>`\nStatus: `[Reviewed][qa]`",
+            value="`/reviewed` (in thread)\nStatus: `[Reviewed][qa]`",
             inline=True
         )
         
         workflow_embed.add_field(
             name="5️⃣ Close Ticket",
-            value="`/closed <thread>`\nStatus: `[CLOSED][user]`",
+            value="`/closed` (in thread)\nStatus: `[CLOSED][user]`",
             inline=True
         )
         
@@ -702,7 +702,8 @@ async def show_help(interaction: discord.Interaction):
             value="✓ `/claim` - Claim tickets\n" +
                   "✓ `/resolved` - Submit for review\n" +
                   "✓ `/closed` - Close tickets\n" +
-                  "✓ View dev leaderboard",
+                  "✓ View dev leaderboard\n" +
+                  "✓ Gets Discord `Developer` role",
             inline=True
         )
         
@@ -710,14 +711,15 @@ async def show_help(interaction: discord.Interaction):
             name="🔍 QA",
             value="✓ `/reviewed` - Approve tickets\n" +
                   "✓ `/closed` - Close tickets\n" +
-                  "✓ View QA leaderboard",
+                  "✓ View QA leaderboard\n" +
+                  "✓ Gets Discord `QA` role",
             inline=True
         )
         
         roles_embed.add_field(
-            name="📌 Note",
-            value="Users can have both roles at once!\n" +
-                  "Use `/set-role @user developer: true qa: true`",
+            name="🔧 Setup",
+            value="Use `/set-role` to assign yourself a role.\n" +
+                  "The Discord role will be created automatically if needed.",
             inline=False
         )
         

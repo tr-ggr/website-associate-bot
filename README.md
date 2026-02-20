@@ -77,18 +77,16 @@ python main.py
 
 ## Commands
 
-### `/set-role <user> <developer> <qa>`
-Assign roles to users. Users can have both Developer and QA roles.
+### `/set-role <developer|qa>`
+Assign yourself a role. The Discord role will be created automatically.
 
 **Parameters:**
-- `user` - The user to assign a role to
-- `developer` - Check if user is a Developer (true/false)
-- `qa` - Check if user is a QA (true/false)
+- `role` - Choose `developer` or `qa`
 
 **Example:**
 ```
-/set-role @John developer: true qa: false
-/set-role @Sarah developer: true qa: true
+/set-role developer
+/set-role qa
 ```
 
 ### `/load-tickets <folder> <channel>`
@@ -104,35 +102,43 @@ Load all markdown files from a specified folder into a Discord channel.
 /load-tickets bugs #bug-reports
 ```
 
-### `/claim <thread>` (Developers only)
-Mark a ticket as claimed. Only users with the Developer role can use this.
+### `/claim`
+Mark a ticket as claimed. Must be used **inside a ticket thread**. Only Developers can use this.
 
-**Parameters:**
-- `thread` - The thread to claim
+**Example workflow:**
+1. Go to the ticket thread
+2. Run `/claim` to claim it
 
-### `/resolved <thread>` (Developers only)
-Mark a ticket as pending review. Only Developers can use this. Adds to developer leaderboard.
+### `/resolved`
+Mark a ticket as pending review. Must be used **inside a ticket thread**. Only Developers can use this. Adds to developer leaderboard.
 
-**Parameters:**
-- `thread` - The thread to mark as pending review
+**Example workflow:**
+1. Go to the ticket thread
+2. Run `/resolved` to submit for QA review
 
-### `/reviewed <thread>` (QAs only)
-Approve a ticket after review. Only users with the QA role can use this. Adds to QA leaderboard.
+### `/reviewed`
+Approve a ticket after review. Must be used **inside a ticket thread**. Only QAs can use this. Adds to QA leaderboard.
 
-**Parameters:**
-- `thread` - The thread to mark as reviewed (must be in Pending-Review status)
+**Requirements:**
+- Ticket must be in Pending-Review status
+- Only QAs can use this
 
-### `/closed <thread>`
-Mark a ticket as closed.
+**Example workflow:**
+1. Go to the ticket thread (in Pending-Review status)
+2. Run `/reviewed` to approve
 
-**Parameters:**
-- `thread` - The thread to close
+### `/closed`
+Mark a ticket as closed. Must be used **inside a ticket thread**.
 
-### `/leaderboard <role> [limit]`
+**Example workflow:**
+1. Go to the ticket thread
+2. Run `/closed` to close the ticket
+
+### `/leaderboard [role] [limit]`
 Display the leaderboard for a specific role.
 
 **Parameters:**
-- `role` - `dev` for Developers or `qa` for QAs (default: dev)
+- `role` - `dev` for Developers (default) or `qa` for QAs
 - `limit` - Number of top resolvers to show (default: 10, max: 50)
 
 **Examples:**
@@ -143,6 +149,9 @@ Display the leaderboard for a specific role.
 
 ### `/ticket-folders`
 List all available ticket folders in the `tickets/` directory.
+
+### `/help`
+Show comprehensive help information about all commands and workflows.
 
 ## Ticket Format
 
