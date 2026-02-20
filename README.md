@@ -75,6 +75,26 @@ Create folders inside the `tickets/` directory with your ticket markdown files.
 python main.py
 ```
 
+## Docker (uv)
+
+Build the image:
+
+```bash
+docker build -t website-associate-bot .
+```
+
+Run the bot (loads `DISCORD_TOKEN` from your local `.env` file):
+
+```bash
+docker run --rm --env-file .env website-associate-bot
+```
+
+Optional: mount tickets if you want to edit them locally without rebuilding:
+
+```bash
+docker run --rm --env-file .env -v $(pwd)/tickets:/app/tickets website-associate-bot
+```
+
 ## Commands
 
 ### `/set-role <developer|qa>`
