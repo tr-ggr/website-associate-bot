@@ -43,42 +43,65 @@ async def on_ready():
 
 @bot.tree.command(
     name="set-role",
-    description="Set user roles (Developer or QA or both)"
+    description="Assign yourself a role (Developer or QA)"
 )
 @app_commands.describe(
-    user="The user to assign a role to",
-    developer="Check if user is a Developer",
-    qa="Check if user is a QA"
+    role="The role to assign: 'developer' or 'qa'"
 )
-async def set_role(interaction: discord.Interaction, user: discord.User, developer: bool = False, qa: bool = False):
-    """Set user roles. User can have both Developer and QA roles."""
+@app_commands.choices(role=[
+    app_commands.Choice(name="Developer", value="developer"),
+    app_commands.Choice(name="QA", value="qa")
+])
+async def set_role(interaction: discord.Interaction, role: str):
+    """Assign yourself a Developer or QA role."""
     await interaction.response.defer()
     
     try:
-        if not developer and not qa:
-            await interaction.followup.send("❌ User must have at least one role (Developer or QA)")
+        role_lower = role.lower()
+        
+        # Determine role parameters
+        if role_lower == "developer":
+            is_developer = True
+            is_qa = False
+            discord_role_name = "Developer"
+            emoji = "👨‍💻"
+        elif role_lower == "qa":
+            is_developer = False
+            is_qa = True
+            discord_role_name = "QA"
+            emoji = "🔍"
+        else:
+            await interaction.followup.send("❌ Invalid role. Choose 'developer' or 'qa'.")
             return
         
+        # Get or create Discord role
+        guild = interaction.guild
+        discord_role = discord.utils.get(guild.roles, name=discord_role_name)
+        
+        if not discord_role:
+            # Create the role if it doesn't exist
+            discord_role = await guild.create_role(
+                name=discord_role_name,
+                color=discord.Color.blurple() if role_lower == "developer" else discord.Color.gold(),
+                reason="Ticket bot role assignment"
+            )
+            logger.info(f"Created Discord role: {discord_role_name}")
+        
+        # Assign Discord role to user
+        await interaction.user.add_roles(discord_role)
+        
         # Set user role in database
-        set_user_role(user.id, str(user), is_developer=developer, is_qa=qa)
-        
-        roles_assigned = []
-        if developer:
-            roles_assigned.append("👨‍💻 Developer")
-        if qa:
-            roles_assigned.append("🔍 QA")
-        
-        roles_text = " + ".join(roles_assigned)
+        set_user_role(interaction.user.id, str(interaction.user), is_developer=is_developer, is_qa=is_qa)
         
         embed = discord.Embed(
             title="Role Assigned",
-            description=f"Assigned to {user.mention}",
-            color=discord.Color.blue()
+            description=f"{emoji} You have been assigned the **{discord_role_name}** role",
+            color=discord.Color.blurple()
         )
-        embed.add_field(name="Roles", value=roles_text, inline=False)
+        embed.add_field(name="Discord Role", value=f"<@&{discord_role.id}>", inline=False)
         
         await interaction.followup.send(embed=embed)
-        logger.info(f"Roles set for {user}: Developer={developer}, QA={qa}")
+        logger.info(f"Role '{role_lower}' set for {interaction.user}: {interaction.user.id}")
         
     except Exception as e:
         logger.error(f"Error setting role: {e}")
@@ -208,20 +231,24 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
 
 @bot.tree.command(
     name="claim",
-    description="Claim a ticket by updating its status to CLAIMED (Developer only)"
+    description="Claim a ticket (use inside a thread) - Developer only"
 )
-@app_commands.describe(
-    thread="The thread/ticket to claim"
-)
-async def claim_ticket(interaction: discord.Interaction, thread: discord.Thread):
-    """Claim a ticket and update its status to CLAIMED. Only Developers can claim."""
+async def claim_ticket(interaction: discord.Interaction):
+    """Claim a ticket and update its status to CLAIMED. Only Developers can claim. Must be used inside a ticket thread."""
     await interaction.response.defer()
     
     try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
         # Check if user is a Developer
         if not has_role(interaction.user.id, "developer"):
-            await interaction.followup.send("❌ Only Developers can claim tickets. Use `/set-role` to assign a role.")
+            await interaction.followup.send("❌ Only Developers can claim tickets. Use `/set-role` to get the Developer role.")
             return
+        
+        thread = interaction.channel
         
         # Get thread info from database
         thread_info = get_thread(thread.id)
@@ -239,7 +266,6 @@ async def claim_ticket(interaction: discord.Interaction, thread: discord.Thread)
         username = member.display_name if member else interaction.user.name
         
         # Update thread name
-        old_name = thread.name
         ticket_name = thread_info['ticket_name']
         new_name = f"[CLAIMED][{username}]{ticket_name}"
         
@@ -265,20 +291,24 @@ async def claim_ticket(interaction: discord.Interaction, thread: discord.Thread)
 
 @bot.tree.command(
     name="resolved",
-    description="Mark a ticket as PENDING-REVIEW and add developer score (Developer only)"
+    description="Mark a ticket as PENDING-REVIEW (use inside a thread) - Developer only"
 )
-@app_commands.describe(
-    thread="The thread/ticket to mark as pending review"
-)
-async def resolve_ticket(interaction: discord.Interaction, thread: discord.Thread):
-    """Mark a ticket as pending review. Only Developers can mark as resolved."""
+async def resolve_ticket(interaction: discord.Interaction):
+    """Mark a ticket as pending review. Only Developers can mark as resolved. Must be used inside a ticket thread."""
     await interaction.response.defer()
     
     try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
         # Check if user is a Developer
         if not has_role(interaction.user.id, "developer"):
-            await interaction.followup.send("❌ Only Developers can mark tickets as pending review. Use `/set-role` to assign a role.")
+            await interaction.followup.send("❌ Only Developers can mark tickets as pending review. Use `/set-role` to get the Developer role.")
             return
+        
+        thread = interaction.channel
         
         # Get thread info from database
         thread_info = get_thread(thread.id)
@@ -325,20 +355,24 @@ async def resolve_ticket(interaction: discord.Interaction, thread: discord.Threa
 
 @bot.tree.command(
     name="reviewed",
-    description="Approve a ticket after review and add to QA score (QA only)"
+    description="Approve a ticket after review (use inside a thread) - QA only"
 )
-@app_commands.describe(
-    thread="The thread/ticket to mark as reviewed"
-)
-async def reviewed_ticket(interaction: discord.Interaction, thread: discord.Thread):
-    """Mark a ticket as reviewed after QA approval. Only QAs can review."""
+async def reviewed_ticket(interaction: discord.Interaction):
+    """Mark a ticket as reviewed after QA approval. Only QAs can review. Must be used inside a ticket thread."""
     await interaction.response.defer()
     
     try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
         # Check if user is a QA
         if not has_role(interaction.user.id, "qa"):
-            await interaction.followup.send("❌ Only QAs can review tickets. Use `/set-role` to assign a role.")
+            await interaction.followup.send("❌ Only QAs can review tickets. Use `/set-role` to get the QA role.")
             return
+        
+        thread = interaction.channel
         
         # Get thread info from database
         thread_info = get_thread(thread.id)
@@ -388,16 +422,20 @@ async def reviewed_ticket(interaction: discord.Interaction, thread: discord.Thre
 
 @bot.tree.command(
     name="closed",
-    description="Mark a ticket as CLOSED"
+    description="Mark a ticket as CLOSED (use inside a thread)"
 )
-@app_commands.describe(
-    thread="The thread/ticket to mark as closed"
-)
-async def close_ticket(interaction: discord.Interaction, thread: discord.Thread):
-    """Mark a ticket as closed."""
+async def close_ticket(interaction: discord.Interaction):
+    """Mark a ticket as closed. Must be used inside a ticket thread."""
     await interaction.response.defer()
     
     try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
+        thread = interaction.channel
+        
         # Get thread info from database
         thread_info = get_thread(thread.id)
         
@@ -537,6 +575,159 @@ async def list_folders(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error listing folders: {e}")
         await interaction.followup.send(f"❌ Error listing folders: {e}")
+
+
+@bot.tree.command(
+    name="help",
+    description="Show all available commands and how to use them"
+)
+async def show_help(interaction: discord.Interaction):
+    """Display help information for all commands."""
+    await interaction.response.defer()
+    
+    try:
+        # Create main help embed
+        embed = discord.Embed(
+            title="📖 Ticket Bot Help",
+            description="Complete guide to all available commands",
+            color=discord.Color.blurple()
+        )
+        
+        # Role Management
+        embed.add_field(
+            name="👥 Role Management",
+            value="**`/set-role <user> <developer> <qa>`**\n" +
+                  "Assign Developer and/or QA roles to users.\n" +
+                  "Users can have both roles simultaneously.\n" +
+                  "`/set-role @john developer: true qa: false`",
+            inline=False
+        )
+        
+        # Ticket Loading
+        embed.add_field(
+            name="📂 Loading Tickets",
+            value="**`/load-tickets <folder> <channel>`**\n" +
+                  "Load tickets from a folder into a Discord channel.\n" +
+                  "Creates threads for each markdown file.\n" +
+                  "`/load-tickets support #support-channel`",
+            inline=False
+        )
+        
+        # Developer Commands
+        embed.add_field(
+            name="👨‍💻 Developer Commands",
+            value="**`/claim <thread>`** - Claim a ticket to work on it\n" +
+                  "**`/resolved <thread>`** - Submit ticket for QA review (adds to dev leaderboard)\n" +
+                  "*Only available to users with Developer role*",
+            inline=False
+        )
+        
+        # QA Commands
+        embed.add_field(
+            name="🔍 QA Commands",
+            value="**`/reviewed <thread>`** - Approve reviewed ticket (adds to QA leaderboard)\n" +
+                  "Must be used on tickets in Pending-Review status\n" +
+                  "*Only available to users with QA role*",
+            inline=False
+        )
+        
+        # General Commands
+        embed.add_field(
+            name="⚙️ General Commands",
+            value="**`/closed <thread>`** - Close a ticket\n" +
+                  "**`/leaderboard <role> [limit]`** - View leaderboard\n" +
+                  "  • `role`: `dev` (default) or `qa`\n" +
+                  "  • `limit`: 1-50 (default: 10)\n" +
+                  "**`/ticket-folders`** - List all available ticket folders\n" +
+                  "**`/help`** - Show this help message",
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=embed)
+        
+        # Send workflow embed
+        workflow_embed = discord.Embed(
+            title="🔄 Ticket Workflow",
+            description="The typical ticket lifecycle",
+            color=discord.Color.green()
+        )
+        
+        workflow_embed.add_field(
+            name="1️⃣ Load Tickets",
+            value="`/load-tickets <folder> <channel>`\nCreates `[OPEN]` threads",
+            inline=True
+        )
+        
+        workflow_embed.add_field(
+            name="2️⃣ Developer Claims",
+            value="`/claim <thread>`\nStatus: `[CLAIMED][developer]`",
+            inline=True
+        )
+        
+        workflow_embed.add_field(
+            name="3️⃣ Dev Submits",
+            value="`/resolved <thread>`\nStatus: `[Pending-Review][dev]`",
+            inline=True
+        )
+        
+        workflow_embed.add_field(
+            name="4️⃣ QA Reviews",
+            value="`/reviewed <thread>`\nStatus: `[Reviewed][qa]`",
+            inline=True
+        )
+        
+        workflow_embed.add_field(
+            name="5️⃣ Close Ticket",
+            value="`/closed <thread>`\nStatus: `[CLOSED][user]`",
+            inline=True
+        )
+        
+        workflow_embed.add_field(
+            name="6️⃣ Check Leaderboard",
+            value="`/leaderboard dev` or `/leaderboard qa`",
+            inline=True
+        )
+        
+        await interaction.followup.send(embed=workflow_embed)
+        
+        # Send roles and permissions embed
+        roles_embed = discord.Embed(
+            title="📋 Roles & Permissions",
+            description="What each role can do",
+            color=discord.Color.gold()
+        )
+        
+        roles_embed.add_field(
+            name="👨‍💻 Developer",
+            value="✓ `/claim` - Claim tickets\n" +
+                  "✓ `/resolved` - Submit for review\n" +
+                  "✓ `/closed` - Close tickets\n" +
+                  "✓ View dev leaderboard",
+            inline=True
+        )
+        
+        roles_embed.add_field(
+            name="🔍 QA",
+            value="✓ `/reviewed` - Approve tickets\n" +
+                  "✓ `/closed` - Close tickets\n" +
+                  "✓ View QA leaderboard",
+            inline=True
+        )
+        
+        roles_embed.add_field(
+            name="📌 Note",
+            value="Users can have both roles at once!\n" +
+                  "Use `/set-role @user developer: true qa: true`",
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=roles_embed)
+        
+        logger.info(f"Help shown to {interaction.user}")
+        
+    except Exception as e:
+        logger.error(f"Error showing help: {e}")
+        await interaction.followup.send(f"❌ Error showing help: {e}")
 
 
 def main():
