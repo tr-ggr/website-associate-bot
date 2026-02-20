@@ -273,8 +273,9 @@ async def claim_ticket(interaction: discord.Interaction):
             await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
             return
         
-        # Check if user is a Developer
-        if not has_role(interaction.user.id, "developer"):
+        # Check if user is a Developer or PM
+        user_roles = get_user_roles(interaction.user.id)
+        if not (user_roles['is_developer'] or user_roles['is_pm']):
             await interaction.followup.send("❌ Only Developers can claim tickets. Use `/set-role` to get the Developer role.")
             return
         
@@ -336,8 +337,9 @@ async def resolve_ticket(interaction: discord.Interaction, pr_url: str):
             await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
             return
         
-        # Check if user is a Developer
-        if not has_role(interaction.user.id, "developer"):
+        # Check if user is a Developer or PM
+        user_roles = get_user_roles(interaction.user.id)
+        if not (user_roles['is_developer'] or user_roles['is_pm']):
             await interaction.followup.send("❌ Only Developers can mark tickets as pending review. Use `/set-role` to get the Developer role.")
             return
         
@@ -401,8 +403,9 @@ async def reviewed_ticket(interaction: discord.Interaction):
             await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
             return
         
-        # Check if user is a QA
-        if not has_role(interaction.user.id, "qa"):
+        # Check if user is a QA or PM
+        user_roles = get_user_roles(interaction.user.id)
+        if not (user_roles['is_qa'] or user_roles['is_pm']):
             await interaction.followup.send("❌ Only QAs can review tickets. Use `/set-role` to get the QA role.")
             return
         
@@ -733,9 +736,13 @@ async def show_help(interaction: discord.Interaction):
         )
         
         roles_embed.add_field(
-            name="� Project Manager",
+            name="🔧 Project Manager (Admin)",
             value="✓ `/load-tickets` - Load tickets into channels\n" +
-                  "✓ Organize ticket folders\n" +
+                  "✓ `/claim` - Claim tickets (like Dev)\n" +
+                  "✓ `/resolved` - Submit for review (like Dev)\n" +
+                  "✓ `/reviewed` - Approve tickets (like QA)\n" +
+                  "✓ `/closed` - Close tickets\n" +
+                  "✓ Can do EVERYTHING\n" +
                   "✓ Gets Discord `Project Manager` role",
             inline=True
         )
@@ -760,9 +767,10 @@ async def show_help(interaction: discord.Interaction):
         )
         
         roles_embed.add_field(
-            name="🔧 Setup",
-            value="Use `/set-role pm` or `/set-role developer` or `/set-role qa`\n" +
-                  "The Discord role will be created automatically if needed.",
+            name="📝 Role System",
+            value="⚠️ **ONE role per user only**\n" +
+                  "When you set a new role, your old role is replaced\n" +
+                  "PM has all permissions (like an admin)",
             inline=False
         )
         
