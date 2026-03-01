@@ -912,10 +912,10 @@ async def unreview_ticket(interaction: discord.Interaction):
 
 @bot.tree.command(
     name="closed",
-    description="Mark a ticket as CLOSED (use inside a thread)"
+    description="Mark a ticket as CLOSED (use inside a thread) - PM or involved Dev/QA only"
 )
 async def close_ticket(interaction: discord.Interaction):
-    """Mark a ticket as closed. Must be used inside a ticket thread."""
+    """Mark a ticket as closed. Must be used inside a ticket thread. Restrict to PM or involved users."""
     await interaction.response.defer()
     
     try:
@@ -935,6 +935,21 @@ async def close_ticket(interaction: discord.Interaction):
         
         if thread_info['status'] == 'CLOSED':
             await interaction.followup.send("⚠️ This ticket is already closed")
+            return
+
+        # Ownership / Permission Check
+        user_roles = get_user_roles(interaction.user.id)
+        is_pm = user_roles['is_pm']
+        
+        # Check if user is involved (Dev who claimed/resolved, or QA who reviewed)
+        is_involved = (
+            interaction.user.id == thread_info['claimed_by_id'] or
+            interaction.user.id == thread_info['resolved_by_id'] or
+            interaction.user.id == thread_info['reviewed_by_id']
+        )
+        
+        if not (is_pm or is_involved):
+            await interaction.followup.send("❌ Only Project Managers or the Developer/QA involved in this ticket can close it.")
             return
         
         # Get user's display name
@@ -963,6 +978,7 @@ async def close_ticket(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error closing ticket: {e}")
         await interaction.followup.send(f"❌ Error closing ticket: {e}")
+
 
 
 @bot.tree.command(
