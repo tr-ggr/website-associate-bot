@@ -1,8 +1,15 @@
 """Database module for managing tickets and leaderboard."""
 import sqlite3
 import os
+import logging
 from datetime import datetime
+import glob
 from config import DATABASE_FILE
+
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def get_connection():
@@ -13,80 +20,56 @@ def get_connection():
 
 
 def init_db():
-    """Initialize the database with required tables."""
+    """Initialize the database and run migrations."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Create threads table
+    # Create migrations table if it doesn't exist
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS threads (
-            thread_id INTEGER PRIMARY KEY,
-            ticket_name TEXT NOT NULL,
-            folder TEXT NOT NULL,
-            channel_id INTEGER NOT NULL,
-            status TEXT DEFAULT 'OPEN',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            created_by TEXT,
-            claimed_by_id INTEGER,
-            claimed_by_username TEXT,
-            resolved_by_id INTEGER,
-            resolved_by_username TEXT,
-            pr_url TEXT,
-            reviewed_by_id INTEGER,
-            reviewed_by_username TEXT
-        )
-    """)
-
-    # Create user_roles table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_roles (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT NOT NULL UNIQUE,
-            is_developer INTEGER DEFAULT 0,
-            is_qa INTEGER DEFAULT 0,
-            is_pm INTEGER DEFAULT 0,
-            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    # Create leaderboard table with both dev and qa scores
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS leaderboard (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT NOT NULL,
-            dev_resolved_count INTEGER DEFAULT 0,
-            qa_reviewed_count INTEGER DEFAULT 0,
-            last_dev_resolved TIMESTAMP,
-            last_qa_reviewed TIMESTAMP
-        )
-    """)
-
-    # Create loaded_tickets table to track which tickets have been loaded
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS loaded_tickets (
+        CREATE TABLE IF NOT EXISTS migrations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_filename TEXT NOT NULL,
-            folder TEXT NOT NULL,
-            thread_id INTEGER NOT NULL,
-            channel_id INTEGER NOT NULL,
-            loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(ticket_filename, folder)
+            name TEXT NOT NULL UNIQUE,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-    # Create settings table for bot configuration
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-    """)
-
     conn.commit()
     conn.close()
 
+    # Run pending migrations
+    run_migrations()
 
-def add_thread(thread_id: int, ticket_name: str, folder: str, channel_id: int, created_by: str = None):
+
+def run_migrations():
+    """Run all pending SQL migrations."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Get applied migrations
+    cursor.execute("SELECT name FROM migrations")
+    applied_migrations = {row['name'] for row in cursor.fetchall()}
+
+    # Get all migration files
+    migration_files = sorted(glob.glob("migrations/*.sql"))
+
+    for migration_file in migration_files:
+        migration_name = os.path.basename(migration_file)
+        if migration_name not in applied_migrations:
+            logger.info(f"Applying migration: {migration_name}")
+            with open(migration_file, 'r') as f:
+                sql = f.read()
+                try:
+                    cursor.executescript(sql)
+                    cursor.execute("INSERT INTO migrations (name) VALUES (?)", (migration_name,))
+                    conn.commit()
+                except sqlite3.Error as e:
+                    logger.error(f"Error applying migration {migration_name}: {e}")
+                    conn.rollback()
+                    break
+
+    conn.close()
+
+
+def add_thread(thread_id: int, ticket_name: str, folder: str, channel_id: int, created_by: str | None = None):
     """Add a new thread to the database."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -114,9 +97,9 @@ def get_thread(thread_id: int):
     return None
 
 
-def update_thread_status(thread_id: int, status: str, claimed_by_id: int = None, claimed_by_username: str = None,
-                        resolved_by_id: int = None, resolved_by_username: str = None,
-                        reviewed_by_id: int = None, reviewed_by_username: str = None, pr_url: str = None):
+def update_thread_status(thread_id: int, status: str, claimed_by_id: int | None = None, claimed_by_username: str | None = None,
+                        resolved_by_id: int | None = None, resolved_by_username: str | None = None,
+                        reviewed_by_id: int | None = None, reviewed_by_username: str | None = None, pr_url: str | None = None):
     """Update the status of a thread and optionally track who made the change."""
     conn = get_connection()
     cursor = conn.cursor()
