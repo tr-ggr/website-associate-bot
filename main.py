@@ -9,6 +9,7 @@ from config import DISCORD_TOKEN, TICKETS_DIR
 from database import (
     init_db, add_thread, get_thread, update_thread_status,
     increment_developer_resolved, increment_qa_reviewed, 
+    decrement_developer_resolved, decrement_qa_reviewed,
     get_leaderboard_dev, get_leaderboard_qa,
     set_user_role, get_user_roles, has_role,
     is_ticket_loaded, mark_ticket_loaded,
@@ -703,6 +704,77 @@ async def resolve_ticket(interaction: discord.Interaction, pr_url: str):
 
 
 @bot.tree.command(
+    name="unresolve",
+    description="Revert a PENDING-REVIEW ticket back to CLAIMED (use inside a thread) - Developer only"
+)
+async def unresolve_ticket(interaction: discord.Interaction):
+    """Revert a ticket from PENDING-REVIEW to CLAIMED. Only Developers can unresolve. Must be used inside a ticket thread."""
+    await interaction.response.defer()
+    
+    try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
+        # Check if user is a Developer or PM
+        user_roles = get_user_roles(interaction.user.id)
+        if not (user_roles['is_developer'] or user_roles['is_pm']):
+            await interaction.followup.send("❌ Only Developers can unresolve tickets. Use `/set-role` to get the Developer role.")
+            return
+        
+        thread = interaction.channel
+        
+        # Get thread info from database
+        thread_info = get_thread(thread.id)
+        
+        if not thread_info:
+            await interaction.followup.send("❌ This thread is not tracked in the database")
+            return
+        
+        if thread_info['status'] != 'PENDING-REVIEW':
+            await interaction.followup.send("⚠️ This ticket is not pending review. Only PENDING-REVIEW tickets can be unresolved.")
+            return
+        
+        # Update thread name back to CLAIMED
+        ticket_name = thread_info['ticket_name']
+        username = thread_info['resolved_by_username'] or "dev"
+        new_name = f"[CLAIMED][{username}]{ticket_name}"
+        
+        await thread.edit(name=new_name)
+        
+        # In database.py, update_thread_status with CLAIMED resets the other fields if we don't pass them
+        # We want to keep the claim info but reset the resolution info
+        update_thread_status(thread.id, "CLAIMED", 
+                             resolved_by_id=None, 
+                             resolved_by_username=None, 
+                             pr_url=None)
+        
+        # Decrement developer leaderboard
+        # Find the original resolver's ID
+        resolver_id = thread_info['resolved_by_id']
+        if resolver_id:
+            decrement_developer_resolved(resolver_id)
+        
+        # Send notification
+        embed = discord.Embed(
+            title="Ticket Unresolved",
+            description=f"Unresolved by: {interaction.user.mention}",
+            color=discord.Color.yellow()
+        )
+        embed.add_field(name="Old Status", value="[Pending-Review]", inline=True)
+        embed.add_field(name="New Status", value=f"[CLAIMED][{username}]", inline=True)
+        
+        await interaction.followup.send(embed=embed)
+        logger.info(f"Ticket unresolved: {thread.id} by {interaction.user}")
+        
+    except Exception as e:
+        logger.error(f"Error unresolving ticket: {e}")
+        await interaction.followup.send(f"❌ Error unresolving ticket: {e}")
+
+
+
+@bot.tree.command(
     name="reviewed",
     description="Approve a ticket after review (use inside a thread) - QA only"
 )
@@ -768,6 +840,74 @@ async def reviewed_ticket(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Error reviewing ticket: {e}")
         await interaction.followup.send(f"❌ Error reviewing ticket: {e}")
+
+
+@bot.tree.command(
+    name="unreview",
+    description="Revert a REVIEWED ticket back to PENDING-REVIEW (use inside a thread) - QA only"
+)
+async def unreview_ticket(interaction: discord.Interaction):
+    """Revert a ticket from REVIEWED back to PENDING-REVIEW. Only QAs can unreview. Must be used inside a ticket thread."""
+    await interaction.response.defer()
+    
+    try:
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            await interaction.followup.send("❌ This command must be used inside a thread. Go to the ticket thread and try again.")
+            return
+        
+        # Check if user is a QA or PM
+        user_roles = get_user_roles(interaction.user.id)
+        if not (user_roles['is_qa'] or user_roles['is_pm']):
+            await interaction.followup.send("❌ Only QAs can unreview tickets. Use `/set-role` to get the QA role.")
+            return
+        
+        thread = interaction.channel
+        
+        # Get thread info from database
+        thread_info = get_thread(thread.id)
+        
+        if not thread_info:
+            await interaction.followup.send("❌ This thread is not tracked in the database")
+            return
+        
+        if thread_info['status'] != 'REVIEWED':
+            await interaction.followup.send("⚠️ This ticket is not reviewed. Only REVIEWED tickets can be unreviewed.")
+            return
+        
+        # Update thread name back to PENDING-REVIEW
+        ticket_name = thread_info['ticket_name']
+        dev_username = thread_info['resolved_by_username'] or "dev"
+        new_name = f"[Pending-Review][{dev_username}]{ticket_name}"
+        
+        await thread.edit(name=new_name)
+        
+        # Update status back to PENDING-REVIEW and clear reviewer info
+        update_thread_status(thread.id, "PENDING-REVIEW", 
+                             reviewed_by_id=None, 
+                             reviewed_by_username=None)
+        
+        # Decrement QA leaderboard
+        reviewer_id = thread_info['reviewed_by_id']
+        if reviewer_id:
+            decrement_qa_reviewed(reviewer_id)
+        
+        # Send notification
+        embed = discord.Embed(
+            title="Ticket Unreviewed",
+            description=f"Unreviewed by: {interaction.user.mention}",
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Old Status", value="[Reviewed]", inline=True)
+        embed.add_field(name="New Status", value=f"[Pending-Review][{dev_username}]", inline=True)
+        
+        await interaction.followup.send(embed=embed)
+        logger.info(f"Ticket unreviewed: {thread.id} by {interaction.user}")
+        
+    except Exception as e:
+        logger.error(f"Error unreviewing ticket: {e}")
+        await interaction.followup.send(f"❌ Error unreviewing ticket: {e}")
+
 
 
 @bot.tree.command(
@@ -972,6 +1112,7 @@ async def show_help(interaction: discord.Interaction):
             value="**`/claim`** (in thread) - Claim a ticket to work on it\n" +
                   "**`/unclaim`** (in thread) - Unclaim a ticket and reset to OPEN\n" +
                   "**`/resolved <pr_url>`** (in thread) - Submit ticket for QA review with PR link (adds to dev leaderboard)\n" +
+                  "**`/unresolve`** (in thread) - Revert status back to CLAIMED (decrements leaderboard)\n" +
                   "*Only available to users with Developer role*",
             inline=False
         )
@@ -980,6 +1121,7 @@ async def show_help(interaction: discord.Interaction):
         embed.add_field(
             name="🔍 QA Commands",
             value="**`/reviewed`** (in thread) - Approve reviewed ticket (adds to QA leaderboard)\n" +
+                  "**`/unreview`** (in thread) - Revert status back to Pending-Review (decrements leaderboard)\n" +
                   "Must be used on tickets in Pending-Review status\n" +
                   "*Only available to users with QA role*",
             inline=False

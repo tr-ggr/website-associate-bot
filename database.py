@@ -247,6 +247,37 @@ def increment_qa_reviewed(user_id: int, username: str):
     conn.close()
 
 
+def decrement_developer_resolved(user_id: int):
+    """Decrement the resolved count for a developer (use for unresolve)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE leaderboard 
+        SET dev_resolved_count = MAX(0, dev_resolved_count - 1)
+        WHERE user_id = ?
+    """, (user_id,))
+
+    conn.commit()
+    conn.close()
+
+
+def decrement_qa_reviewed(user_id: int):
+    """Decrement the reviewed count for a QA (use for unreview)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE leaderboard 
+        SET qa_reviewed_count = MAX(0, qa_reviewed_count - 1)
+        WHERE user_id = ?
+    """, (user_id,))
+
+    conn.commit()
+    conn.close()
+
+
+
 def get_leaderboard_dev(limit: int = 10):
     """Get the developer leaderboard sorted by resolved count."""
     conn = get_connection()
