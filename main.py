@@ -305,6 +305,34 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
         created_count = 0
         failed_count = 0
         skipped_count = 0
+
+        def build_section_messages(section_title: str, section_body: str, max_length: int = 1950) -> list[str]:
+            """Split long section text into safe plain-message chunks."""
+            if not section_body:
+                return []
+
+            chunks = []
+            remaining = section_body.strip()
+            first_chunk = True
+
+            while remaining:
+                header = f"**{section_title}**\n" if first_chunk else f"**{section_title} (cont.)**\n"
+                available = max_length - len(header)
+
+                if len(remaining) <= available:
+                    chunks.append(header + remaining)
+                    break
+
+                split_at = remaining.rfind("\n", 0, available)
+                if split_at <= 0:
+                    split_at = available
+
+                part = remaining[:split_at].rstrip()
+                chunks.append(header + part)
+                remaining = remaining[split_at:].lstrip("\n")
+                first_chunk = False
+
+            return chunks
         
         for ticket in tickets:
             try:
@@ -337,43 +365,34 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
                 # Mark ticket as loaded
                 mark_ticket_loaded(ticket_filename, folder, thread.id, channel.id)
                 
-                # Build detailed embed with parsed information
-                embed = discord.Embed(
-                    title=display_name,
-                    color=discord.Color.blue()
-                )
-                
-                # Add priority if present
+                # Send plain sectioned messages instead of a single embed.
+                messages = []
+
+                header_lines = [f"**{display_name}**"]
                 if ticket.get('priority'):
-                    embed.add_field(name="🚨 Priority", value=f"**{ticket['priority']}**", inline=False)
-                
-                # Add problem section
+                    header_lines.append(f"🚨 **Priority**: {ticket['priority']}")
+                header_lines.append(f"📁 **Folder**: `{folder}`")
+                header_lines.append("**Status**: 🔵 OPEN")
+                header_lines.append(f"*Created by {interaction.user}*")
+                messages.append("\n".join(header_lines))
+
                 if ticket.get('problem'):
-                    problem_text = ticket['problem'][:1024]  # Discord limit
-                    if len(ticket['problem']) > 1024:
-                        problem_text += "..."
-                    embed.add_field(name="Problem", value=problem_text, inline=False)
-                
-                # Add what to fix
+                    messages.extend(build_section_messages("Problem", ticket['problem']))
+
                 if ticket.get('what_to_fix'):
                     fix_text = "\n".join([f"{i+1}. {item}" for i, item in enumerate(ticket['what_to_fix'])])
-                    embed.add_field(name="What to Fix", value=fix_text, inline=False)
-                
-                # Add acceptance criteria
+                    messages.extend(build_section_messages("What to Fix", fix_text))
+
                 if ticket.get('acceptance_criteria'):
-                    criteria_text = "\n".join([f"✓ {item}" for item in ticket['acceptance_criteria']])
-                    embed.add_field(name="Acceptance Criteria", value=criteria_text, inline=False)
-                
-                # Add related files if present
+                    criteria_text = "\n".join([f"- {item}" for item in ticket['acceptance_criteria']])
+                    messages.extend(build_section_messages("Acceptance Criteria", criteria_text))
+
                 if ticket.get('related_files'):
-                    files_text = "\n".join([f"• {file}" for file in ticket['related_files']])
-                    embed.add_field(name="Related Files", value=files_text, inline=False)
-                
-                embed.add_field(name="Status", value="🔵 OPEN", inline=True)
-                embed.add_field(name="Folder", value=f"`{folder}`", inline=True)
-                embed.set_footer(text=f"Created by {interaction.user}")
-                
-                await thread.send(embed=embed)
+                    files_text = "\n".join([f"- {file}" for file in ticket['related_files']])
+                    messages.extend(build_section_messages("Related Files", files_text))
+
+                for message in messages:
+                    await thread.send(message)
                 
                 created_count += 1
                 logger.info(f"Created thread: {thread_name} (ID: {thread.id})")
