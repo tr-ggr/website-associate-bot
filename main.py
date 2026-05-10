@@ -6,6 +6,7 @@ import logging
 import re
 from datetime import datetime, time, timezone, timedelta
 from config import DISCORD_TOKEN, TICKETS_DIR
+from thread_naming import build_thread_name, parse_thread_name
 from database import (
     init_db, add_thread, get_thread, update_thread_status,
     increment_developer_resolved, increment_qa_reviewed, 
@@ -36,24 +37,6 @@ def normalize_ticket_name(name: str) -> str:
     """Normalize a ticket name for matching to filenames."""
     cleaned = re.sub(r"[^\w\s-]", "", name.lower())
     return re.sub(r"\s+", " ", cleaned).strip()
-
-
-def parse_thread_name(thread_name: str) -> tuple[str | None, str | None]:
-    """Parse a thread name into status and ticket display name."""
-    patterns = [
-        ("OPEN", r"^\[OPEN\]\s*(.+)$"),
-        ("CLAIMED", r"^\[CLAIMED\]\[.+?\](.+)$"),
-        ("PENDING-REVIEW", r"^\[Pending-Review\]\[.+?\](.+)$"),
-        ("REVIEWED", r"^\[Reviewed\]\[.+?\](.+)$"),
-        ("CLOSED", r"^\[CLOSED\]\[.+?\](.+)$"),
-    ]
-
-    for status, pattern in patterns:
-        match = re.match(pattern, thread_name)
-        if match:
-            return status, match.group(1).strip()
-
-    return None, None
 
 
 @bot.event
@@ -395,7 +378,7 @@ async def load_tickets(interaction: discord.Interaction, folder: str, channel: d
                 
                 # Use parsed title if available, otherwise use name
                 display_name = ticket.get('title') or ticket['name']
-                thread_name = f"[OPEN] {display_name}"
+                thread_name = build_thread_name("OPEN", display_name)
                 
                 # Create thread in the specified channel
                 thread = await channel.create_thread(
@@ -624,7 +607,7 @@ async def claim_ticket(interaction: discord.Interaction):
         
         # Update thread name
         ticket_name = thread_info['ticket_name']
-        new_name = f"[CLAIMED][{username}]{ticket_name}"
+        new_name = build_thread_name("CLAIMED", ticket_name, username=username)
         
         await thread.edit(name=new_name)
         update_thread_status(thread.id, "CLAIMED", claimed_by_id=interaction.user.id, claimed_by_username=username)
@@ -681,7 +664,7 @@ async def unclaim_ticket(interaction: discord.Interaction):
         
         # Update thread name - remove claim prefix
         ticket_name = thread_info['ticket_name']
-        new_name = f"[OPEN] {ticket_name}"
+        new_name = build_thread_name("OPEN", ticket_name)
         
         await thread.edit(name=new_name)
         update_thread_status(thread.id, "OPEN")
@@ -745,7 +728,7 @@ async def resolve_ticket(interaction: discord.Interaction, pr_url: str):
         
         # Update thread name
         ticket_name = thread_info['ticket_name']
-        new_name = f"[Pending-Review][{username}]{ticket_name}"
+        new_name = build_thread_name("PENDING-REVIEW", ticket_name, username=username)
         
         await thread.edit(name=new_name)
         update_thread_status(thread.id, "PENDING-REVIEW", resolved_by_id=interaction.user.id, resolved_by_username=username, pr_url=pr_url)
@@ -808,7 +791,7 @@ async def unresolve_ticket(interaction: discord.Interaction):
         # Update thread name back to CLAIMED
         ticket_name = thread_info['ticket_name']
         username = thread_info['resolved_by_username'] or "dev"
-        new_name = f"[CLAIMED][{username}]{ticket_name}"
+        new_name = build_thread_name("CLAIMED", ticket_name, username=username)
         
         await thread.edit(name=new_name)
         
@@ -886,7 +869,7 @@ async def reviewed_ticket(interaction: discord.Interaction):
         
         # Update thread name
         ticket_name = thread_info['ticket_name']
-        new_name = f"[Reviewed][{username}]{ticket_name}"
+        new_name = build_thread_name("REVIEWED", ticket_name, username=username)
         
         await thread.edit(name=new_name)
         update_thread_status(thread.id, "REVIEWED", reviewed_by_id=interaction.user.id, reviewed_by_username=username)
@@ -947,7 +930,7 @@ async def unreview_ticket(interaction: discord.Interaction):
         # Update thread name back to PENDING-REVIEW
         ticket_name = thread_info['ticket_name']
         dev_username = thread_info['resolved_by_username'] or "dev"
-        new_name = f"[Pending-Review][{dev_username}]{ticket_name}"
+        new_name = build_thread_name("PENDING-REVIEW", ticket_name, username=dev_username)
         
         await thread.edit(name=new_name)
         
@@ -1027,7 +1010,7 @@ async def close_ticket(interaction: discord.Interaction):
         
         # Update thread name
         ticket_name = thread_info['ticket_name']
-        new_name = f"[CLOSED][{username}]{ticket_name}"
+        new_name = build_thread_name("CLOSED", ticket_name, username=username)
         
         await thread.edit(name=new_name)
         update_thread_status(thread.id, "CLOSED")
